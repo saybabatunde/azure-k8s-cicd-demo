@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: azure-k8s-cicd
+  labels:
+    app: azure-k8s-cicd
+    environment: dev

@@ -1,0 +1,157 @@
+name: Deploy to AKS
+
+on:
+  workflow_run:
+    workflows: ["Build & Push to ACR"]
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+
+env:
+  REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_NAME: azure-k8s-cicd-demo
+  KUBE_NAMESPACE: azure-k8s-cicd
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to AKS Cluster
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.RESOURCE_GROUP_NAME }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Verify Cluster Connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+          echo "✅ Connected to AKS cluster"
+
+      - name: Create Namespace
+        run: |
+          kubectl create namespace ${{ env.KUBE_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace ${{ env.KUBE_NAMESPACE }} app=azure-k8s-cicd --overwrite
+
+      - name: Deploy Service Account and RBAC
+        run: |
+          kubectl apply -f k8s/serviceaccount.yaml
+
+      - name: Update Deployment Image
+        run: |
+          # Replace placeholder with actual registry
+          sed -i "s|CONTAINER_REGISTRY_URL|${{ env.REGISTRY }}|g" k8s/deployment.yaml
+
+          # Apply deployment
+          kubectl apply -f k8s/deployment.yaml
+
+          echo "Deployment applied with image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+
+      - name: Deploy Service
+        run: |
+          kubectl apply -f k8s/service.yaml
+
+      - name: Wait for Deployment Rollout
+        run: |
+          echo "Waiting for deployment to roll out..."
+          kubectl rollout status deployment/azure-k8s-cicd-app \
+            --namespace=${{ env.KUBE_NAMESPACE }} \
+            --timeout=5m
+
+          echo "✅ Deployment rolled out successfully"
+
+      - name: Get Service Information
+        run: |
+          echo "=== Deployment Status ==="
+          kubectl get deployment -n ${{ env.KUBE_NAMESPACE }}
+
+          echo ""
+          echo "=== Pod Status ==="
+          kubectl get pods -n ${{ env.KUBE_NAMESPACE }}
+
+          echo ""
+          echo "=== Service Status ==="
+          kubectl get svc -n ${{ env.KUBE_NAMESPACE }}
+
+          echo ""
+          echo "=== Getting External IP (this may take a minute) ==="
+
+          # Wait for external IP to be assigned
+          for i in {1..30}; do
+            EXTERNAL_IP=$(kubectl get svc azure-k8s-cicd-service \
+              -n ${{ env.KUBE_NAMESPACE }} \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+
+            if [ ! -z "$EXTERNAL_IP" ] && [ "$EXTERNAL_IP" != "<pending>" ]; then
+              echo "✅ Service accessible at: http://$EXTERNAL_IP"
+              echo ""
+              echo "Test endpoints:"
+              echo "  GET http://$EXTERNAL_IP/ → Welcome message"
+              echo "  GET http://$EXTERNAL_IP/health → Health check"
+              echo "  GET http://$EXTERNAL_IP/api/v1/status → API status"
+              break
+            fi
+
+            if [ $i -eq 30 ]; then
+              echo "⚠️  External IP not yet assigned (still pending). Check back in a few moments:"
+              echo "    kubectl get svc -n ${{ env.KUBE_NAMESPACE }}"
+            fi
+
+            sleep 3
+          done
+
+      - name: Check Pod Logs
+        if: always()
+        run: |
+          echo "=== Pod Logs ==="
+          kubectl logs -n ${{ env.KUBE_NAMESPACE }} \
+            -l app=azure-k8s-cicd-app \
+            --tail=20 || echo "No logs available yet"
+
+      - name: Deployment Summary
+        run: |
+          echo "🎉 Deployment Complete!"
+          echo ""
+          echo "Image deployed:"
+          echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo ""
+          echo "To check deployment status:"
+          echo "  kubectl get all -n ${{ env.KUBE_NAMESPACE }}"
+          echo ""
+          echo "To view logs:"
+          echo "  kubectl logs -f deployment/azure-k8s-cicd-app -n ${{ env.KUBE_NAMESPACE }}"
+          echo ""
+          echo "To port-forward for local testing:"
+          echo "  kubectl port-forward svc/azure-k8s-cicd-service 8080:80 -n ${{ env.KUBE_NAMESPACE }}"
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo ""
+          echo "Debug information:"
+          kubectl describe deployment azure-k8s-cicd-app -n ${{ env.KUBE_NAMESPACE }} || true
+          kubectl get events -n ${{ env.KUBE_NAMESPACE }} --sort-by='.lastTimestamp' || true

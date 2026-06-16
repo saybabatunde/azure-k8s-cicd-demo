@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: azure-k8s-cicd-service
+  namespace: azure-k8s-cicd
+  labels:
+    app: azure-k8s-cicd-app
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+spec:
+  type: LoadBalancer
+  selector:
+    app: azure-k8s-cicd-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  sessionAffinity: None
+  externalTrafficPolicy: Local
