@@ -23,6 +23,10 @@ provider "azurerm" {
   subscription_id = var.azure_subscription_id
 }
 
+# Get current Azure context
+data "azurerm_client_config" "current" {}
+
+
 # Create resource group
 resource "azurerm_resource_group" "main" {
   name     = var.resource_group_name
@@ -47,8 +51,6 @@ resource "azurerm_subnet" "aks" {
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_cidr]
-
-  enforce_private_link_endpoint_network_policies = true
 }
 
 # Local variables

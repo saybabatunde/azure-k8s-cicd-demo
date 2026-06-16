@@ -80,6 +80,34 @@ output "log_analytics_workspace_name" {
   value       = azurerm_log_analytics_workspace.main.name
 }
 
+# Monitoring Outputs
+output "application_insights_id" {
+  description = "ID of Application Insights instance"
+  value       = azurerm_application_insights.main.id
+}
+
+output "application_insights_connection_string" {
+  description = "Connection string for Application Insights"
+  value       = azurerm_application_insights.main.connection_string
+  sensitive   = true
+}
+
+output "application_insights_instrumentation_key" {
+  description = "Instrumentation key for Application Insights"
+  value       = azurerm_application_insights.main.instrumentation_key
+  sensitive   = true
+}
+
+output "action_group_id" {
+  description = "ID of the alert action group"
+  value       = azurerm_monitor_action_group.main.id
+}
+
+output "dashboard_url" {
+  description = "URL to Azure Portal Dashboard"
+  value       = "https://portal.azure.com/#@${data.azurerm_client_config.current.tenant_id}/dashboard/arm${azurerm_portal_dashboard.main.id}"
+}
+
 # Next Steps
 output "next_steps" {
   description = "Instructions for using the created resources"

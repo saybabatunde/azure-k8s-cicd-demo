@@ -35,3 +35,6 @@ acr_sku = "Standard"
 enable_optional_node_pool = false
 optional_vm_size          = "Standard_B2s"
 optional_node_count       = 1
+
+# Monitoring & Alerts
+alert_email = "your-email@example.com"

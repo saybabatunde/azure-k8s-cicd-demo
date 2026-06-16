@@ -135,3 +135,10 @@ variable "acr_sku" {
     error_message = "ACR SKU must be Basic, Standard, or Premium."
   }
 }
+
+# Monitoring & Alerts
+variable "alert_email" {
+  description = "Email address for receiving alerts"
+  type        = string
+  default     = "admin@example.com"
+}
